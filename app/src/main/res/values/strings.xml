@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    NegoPlayer - Advanced Android Media Platform
+    Author: Muhammad Umar
+    Project: NegoPlayer
+-->
+<resources>
+    <string name="app_name">NegoPlayer</string>
+    <string name="app_version">1.0.0</string>
+    <string name="developer_name">Muhammad Umar Jabbar</string>
+    <string name="developer_country">Pakistan</string>
+    <string name="about_tagline">Proudly Built in Pakistan</string>
+    <string name="player_channel_name">NegoPlayer Media Playback</string>
+    <string name="player_channel_description">Background media playback controls</string>
+    <string name="notification_playing">Now Playing</string>
+    <string name="permission_storage_rationale">NegoPlayer needs storage access to scan and play your media files</string>
+</resources>
