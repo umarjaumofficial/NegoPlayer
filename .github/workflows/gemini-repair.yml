@@ -1,20 +1,20 @@
-# NegoPlayer CI/CD Pipeline — Infinite Gemini Repair Loop
+name: NegoPlayer - Build and Infinite Gemini Repair
+
 # Author: Muhammad Umar
 # Project: NegoPlayer
 #
-# Strategy:
-#   • Attempt build
-#   • If it fails → call Gemini, commit fixes, retry
-#   • Repeat FOREVER until the build finally succeeds — no cap on rounds
-#   • On success → build release APK and upload artifact
-
-name: "NegoPlayer — Build & Infinite Gemini Repair"
+# This workflow attempts to build the Android project.
+# If it fails, Gemini CLI repairs the code and retries.
+# There is NO cap on repair rounds - it loops until the build is green.
 
 on:
   push:
-    branches: ["**"]
+    branches:
+      - "**"
   pull_request:
-    branches: ["main", "master"]
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 env:
@@ -25,165 +25,116 @@ permissions:
   actions: read
 
 jobs:
-  # ============================================================
-  # SINGLE JOB: keeps looping until the build passes
-  # ============================================================
   build-and-repair:
-    name: "Build — Gemini Repairs Until Success"
+    name: Build - Gemini Repairs Until Success
     runs-on: ubuntu-latest
 
     steps:
-      # --------------------------------------------------------
-      # 1. Checkout
-      # --------------------------------------------------------
-      - name: "Checkout repository"
+
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # --------------------------------------------------------
-      # 2. Git identity for repair commits
-      # --------------------------------------------------------
-      - name: "Configure Git identity"
+      - name: Configure Git identity
         run: |
-          git config --global user.name  "NegoPlayer Gemini Bot"
+          git config --global user.name "NegoPlayer Gemini Bot"
           git config --global user.email "gemini-bot@negoplayer.ci"
 
-      # --------------------------------------------------------
-      # 3. Java 17
-      # --------------------------------------------------------
-      - name: "Setup Java 17"
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
           cache: gradle
 
-      # --------------------------------------------------------
-      # 4. Android SDK
-      # --------------------------------------------------------
-      - name: "Setup Android SDK"
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # --------------------------------------------------------
-      # 5. Gradle cache
-      # --------------------------------------------------------
-      - name: "Restore Gradle cache"
+      - name: Restore Gradle cache
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
             ~/.android/build-cache
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts','**/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle-
 
-      # --------------------------------------------------------
-      # 6. Executable permission
-      # --------------------------------------------------------
-      - name: "Make gradlew executable"
+      - name: Make gradlew executable
         run: chmod +x gradlew
 
-      # --------------------------------------------------------
-      # 7. Install Gemini CLI once before the loop
-      # --------------------------------------------------------
-      - name: "Install Gemini CLI"
+      - name: Install Gemini CLI
         run: npm install -g @google/gemini-cli
 
-      # --------------------------------------------------------
-      # 8. INFINITE REPAIR LOOP
+      # ----------------------------------------------------------------
+      # INFINITE REPAIR LOOP
       #
-      #    Each iteration:
-      #      a) ./gradlew assembleDebug
-      #      b) exit 0  → break (success!)
-      #      c) exit != 0 → send error log to Gemini CLI,
-      #                     let Gemini patch files on disk,
-      #                     git commit + push, loop back to (a)
+      # The prompt template lives in .github/gemini-prompt-template.txt
+      # so there is NO heredoc inside this YAML block at all.
       #
-      #    There is NO maximum round limit.
-      #    The loop runs until the build is green.
-      # --------------------------------------------------------
-      - name: "Infinite Repair Loop — Build until success"
+      # Each iteration:
+      #   1. Run ./gradlew assembleDebug
+      #   2. If exit 0  -> write REPAIR_ROUNDS env var, break
+      #   3. If exit != 0 -> build prompt from template + error log,
+      #                      run Gemini CLI, commit changes, retry
+      # ----------------------------------------------------------------
+      - name: Infinite Repair Loop - Build until success
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GITHUB_TOKEN:   ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
           ROUND=0
 
           while true; do
             ROUND=$((ROUND + 1))
+            BUILD_LOG="build_round_${ROUND}.txt"
+
             echo ""
             echo "========================================================"
-            echo "  NegoPlayer Build Round ${ROUND}"
+            echo "  NegoPlayer Build  |  Round ${ROUND}"
             echo "  Author: Muhammad Umar  |  Pakistan"
             echo "========================================================"
 
-            BUILD_LOG="build_round_${ROUND}.txt"
-
-            # ── a) Attempt build ────────────────────────────────────
+            # --- a) Attempt build ---
             ./gradlew assembleDebug --stacktrace 2>&1 | tee "$BUILD_LOG"
             BUILD_EXIT=${PIPESTATUS[0]}
 
             if [ "$BUILD_EXIT" -eq 0 ]; then
-              echo ""
-              echo "BUILD SUCCEEDED on round ${ROUND}!"
-              echo "REPAIR_ROUNDS=${ROUND}" >> "$GITHUB_ENV"
+              echo "BUILD SUCCEEDED on round ${ROUND}."
+              printf "REPAIR_ROUNDS=%s\n" "$ROUND" >> "$GITHUB_ENV"
               break
             fi
 
-            echo ""
-            echo "Build FAILED on round ${ROUND}. Calling Gemini for repair..."
+            echo "Build FAILED on round ${ROUND}. Invoking Gemini repair..."
 
-            # ── b) Extract relevant error lines ────────────────────
-            # Keep the last 400 lines which contain the actual errors
-            ERROR_SNIPPET=$(tail -400 "$BUILD_LOG" | head -400)
+            # --- b) Extract tail of error log (last 400 lines) ---
+            ERROR_TAIL=$(tail -400 "$BUILD_LOG")
 
-            # ── c) Write Gemini prompt ──────────────────────────────
+            # --- c) Build prompt from template ---
+            # Read the template, replace the placeholder with real error log.
+            # Using Python to do the substitution safely avoids shell escaping issues.
             PROMPT_FILE="/tmp/gemini_prompt_${ROUND}.txt"
-            cat > "$PROMPT_FILE" << 'PROMPT_DELIMITER'
-You are a senior Android engineer specialising in Kotlin, Jetpack Compose, and Media3.
+            python3 -c "
+          import sys
 
-The Android project "NegoPlayer" (by Muhammad Umar, Pakistan) failed to compile.
-Your job is to fix every compilation error by editing the source files on disk.
+          template_path = '.github/gemini-prompt-template.txt'
+          error_log = sys.stdin.read()
 
-ROUND_PLACEHOLDER
+          with open(template_path, 'r') as f:
+              template = f.read()
 
-BUILD ERROR LOG:
-ERROR_PLACEHOLDER
+          prompt = template.replace('__ERROR_LOG__', error_log)
 
-MANDATORY INSTRUCTIONS:
-1. Read every error line carefully and locate the exact file + line.
-2. Open each failing file and make the minimum change that fixes the error.
-3. Do NOT remove features or screens — only fix compilation errors.
-4. Check for these common root causes:
-   - Missing import statements
-   - Unresolved class / function references
-   - Wrong Compose API signatures or deprecated parameters
-   - @HiltViewModel without @Inject constructor
-   - @AndroidEntryPoint missing on Activity or Service
-   - Room Entity/Dao/Database annotation mismatches
-   - Incorrect Media3 1.4.x API calls
-   - Kotlin type mismatches
-   - Missing module dependency in build.gradle.kts
-   - AndroidManifest permission or component errors
-   - XML resource syntax errors
-   - Sealed class exhaustiveness errors
-5. After editing each file verify it is syntactically correct Kotlin.
-6. Follow: Kotlin 2.0, Compose best-practices, Clean Architecture, Media3 1.4.
+          with open('$PROMPT_FILE', 'w') as f:
+              f.write(prompt)
 
-Apply all fixes to the files on disk right now.
-PROMPT_DELIMITER
+          print('Prompt written to $PROMPT_FILE')
+          " <<< "$ERROR_TAIL"
 
-            # Substitute real values into the prompt
-            sed -i "s/ROUND_PLACEHOLDER/Build round: ${ROUND}/" "$PROMPT_FILE"
-            # Append the actual error log after the placeholder line
-            sed -i "s/ERROR_PLACEHOLDER/See appended log below:/" "$PROMPT_FILE"
-            echo "" >> "$PROMPT_FILE"
-            echo "$ERROR_SNIPPET" >> "$PROMPT_FILE"
-
-            # ── d) Run Gemini CLI ───────────────────────────────────
+            # --- d) Run Gemini CLI ---
             gemini \
               --api-key "$GEMINI_API_KEY" \
               --model "gemini-2.5-pro" \
@@ -191,63 +142,51 @@ PROMPT_DELIMITER
               --yolo \
               < "$PROMPT_FILE" \
               2>&1 | tee "/tmp/gemini_output_${ROUND}.txt" \
-              || echo "Gemini CLI exited non-zero — files may still have been patched"
+              || echo "Gemini CLI returned non-zero - continuing anyway"
 
-            # ── e) Commit whatever Gemini changed ──────────────────
+            # --- e) Commit whatever Gemini changed ---
             git add -A
             if git diff --cached --quiet; then
-              echo "Gemini made no changes on round ${ROUND}."
-              echo "Trying a clean build anyway..."
+              echo "Gemini made no file changes on round ${ROUND}."
             else
-              CHANGED_FILES=$(git diff --cached --name-only | tr '\n' ', ')
-              git commit -m "fix(gemini-round-${ROUND}): auto-repair — ${CHANGED_FILES}"
+              CHANGED=$(git diff --cached --name-only | tr '\n' ' ')
+              git commit -m "fix(gemini-round-${ROUND}): auto-repair NegoPlayer - ${CHANGED}"
               git push origin HEAD \
-                || { echo "Push failed — rebasing and retrying"; git pull --rebase origin HEAD && git push origin HEAD; }
+                || { git pull --rebase origin HEAD && git push origin HEAD; }
             fi
 
-            # ── f) Pull latest before next attempt ─────────────────
+            # --- f) Pull any remote changes before next round ---
             git pull --rebase origin HEAD 2>/dev/null || true
 
-            echo "Retrying build — round $((ROUND + 1)) coming up..."
+            echo "Retrying build - round $((ROUND + 1)) coming up..."
             sleep 5
           done
 
-      # --------------------------------------------------------
-      # 9. Upload ALL build round logs
-      # --------------------------------------------------------
-      - name: "Upload build logs (all rounds)"
+      - name: Upload build logs from all rounds
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: "build-logs-all-rounds"
-          path: "build_round_*.txt"
+          name: build-logs-all-rounds
+          path: build_round_*.txt
           retention-days: 14
           if-no-files-found: ignore
 
-      # --------------------------------------------------------
-      # 10. Build Release APK (only reaches here if loop exited)
-      # --------------------------------------------------------
-      - name: "Build Release APK"
+      - name: Build Release APK
         run: |
-          echo "NegoPlayer debug build passed after ${{ env.REPAIR_ROUNDS }} round(s)."
-          echo "Building release APK now..."
+          echo "Debug build succeeded after ${{ env.REPAIR_ROUNDS }} round(s). Building release..."
           ./gradlew assembleRelease --stacktrace
 
-      # --------------------------------------------------------
-      # 11. Sign APK (optional — needs keystore secrets)
-      # --------------------------------------------------------
-      - name: "Sign Release APK"
+      - name: Sign Release APK
         if: ${{ env.KEYSTORE_BASE64 != '' }}
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEY_ALIAS:       ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD:    ${{ secrets.KEY_PASSWORD }}
-          STORE_PASSWORD:  ${{ secrets.STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
         run: |
           echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
           BT_VER=$(ls "$ANDROID_SDK_ROOT/build-tools/" | sort -V | tail -1)
           BT="$ANDROID_SDK_ROOT/build-tools/$BT_VER"
-
           "$BT/apksigner" sign \
             --ks release.keystore \
             --ks-key-alias "$KEY_ALIAS" \
@@ -255,17 +194,12 @@ PROMPT_DELIMITER
             --key-pass "pass:$KEY_PASSWORD" \
             --out app/build/outputs/apk/release/app-release.apk \
             app/build/outputs/apk/release/app-release-unsigned.apk
-
           "$BT/zipalign" -v 4 \
             app/build/outputs/apk/release/app-release.apk \
             app/build/outputs/apk/release/app-release-aligned.apk
-
           rm -f release.keystore
 
-      # --------------------------------------------------------
-      # 12. Upload APK artifact (exact name as specified)
-      # --------------------------------------------------------
-      - name: "Upload NegoPlayer-APK"
+      - name: Upload NegoPlayer-APK
         uses: actions/upload-artifact@v4
         with:
           name: NegoPlayer-APK
@@ -276,15 +210,12 @@ PROMPT_DELIMITER
           if-no-files-found: warn
           retention-days: 30
 
-      # --------------------------------------------------------
-      # 13. GitHub Release on main branch
-      # --------------------------------------------------------
-      - name: "Create GitHub Release"
+      - name: Create GitHub Release
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "v1.0.${{ github.run_number }}"
-          name:     "NegoPlayer v1.0.${{ github.run_number }}"
+          tag_name: v1.0.${{ github.run_number }}
+          name: NegoPlayer v1.0.${{ github.run_number }}
           body: |
             ## NegoPlayer Release
 
@@ -292,35 +223,32 @@ PROMPT_DELIMITER
             **Built in:** Rawalpindi, Pakistan
             **Gemini repair rounds needed:** ${{ env.REPAIR_ROUNDS }}
 
-            ### Features in this build
-            - 4K & HDR playback via Media3 / ExoPlayer 1.4
+            ### Features
+            - 4K and HDR playback via Media3 ExoPlayer 1.4
             - HLS, DASH, RTMP, RTSP streaming
             - IPTV with M3U playlist support
             - Local media library with MediaStore scanning
-            - Gesture controls — brightness, volume, seek
-            - Subtitle engine — SRT, ASS, VTT
+            - Gesture controls for brightness, volume, and seek
+            - Subtitle engine supporting SRT, ASS, and VTT
             - Picture-in-Picture mode
             - Material 3 dark theme
-            - Clean Architecture + MVVM + Hilt + Room
+            - Clean Architecture with MVVM, Hilt, and Room
 
-            ### How to install
-            Download app-release-unsigned.apk — requires Android 8.0 or higher.
+            ### Install
+            Download app-release-unsigned.apk and install on Android 8.0 or higher.
 
             Proudly Built in Pakistan
-          files: "app/build/outputs/apk/release/app-release*.apk"
+          files: app/build/outputs/apk/release/app-release*.apk
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # --------------------------------------------------------
-      # 14. Summary
-      # --------------------------------------------------------
-      - name: "Final build summary"
+      - name: Final build summary
         if: always()
         run: |
           echo "========================================================"
-          echo "  NegoPlayer — Final Build Summary"
+          echo "  NegoPlayer - Final Build Summary"
           echo "  Author  : Muhammad Umar Jabbar"
           echo "  Location: Rawalpindi, Pakistan"
           echo "  Rounds  : ${{ env.REPAIR_ROUNDS }}"
@@ -329,6 +257,9 @@ PROMPT_DELIMITER
             app/build/outputs/apk/release/app-release.apk \
             app/build/outputs/apk/release/app-release-unsigned.apk \
             app/build/outputs/apk/debug/app-debug.apk; do
-            [ -f "$APK" ] && echo "  OK  $(basename $APK)  $(du -sh $APK | cut -f1)"
+            if [ -f "$APK" ]; then
+              SIZE=$(du -sh "$APK" | cut -f1)
+              echo "  OK  $(basename $APK)  $SIZE"
+            fi
           done
           echo "========================================================"
