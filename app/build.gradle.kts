@@ -72,9 +72,9 @@ android {
 
 dependencies {
     // Compose BOM
-    val composeBom = platform("androidx.compose:compose-bom:2024.02.00")
+    implementation(platform("androidx.compose:compose-bom:2024.02.00"))
     implementation(composeBom)
-    androidTestImplementation(composeBom)
+    androidTestImplementation(platform("androidx.compose:compose-bom:2024.02.00"))
 
     // Compose UI
     implementation("androidx.compose.ui:ui")
