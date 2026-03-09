@@ -70,12 +70,12 @@ android {
 }
 
 dependencies {
-    // Compose BOM
-    implementation(platform("androidx.compose:compose-bom:2024.02.00"))
-    implementation(platform("androidx.compose:compose-bom:2024.02.00"))
-    androidTestImplementation(platform("androidx.compose:compose-bom:2024.02.00"))
+    // 1. Compose BOM (ONLY ONCE)
+    val composeBom = platform("androidx.compose:compose-bom:2024.02.01")
+    implementation(composeBom)
+    androidTestImplementation(composeBom)
 
-    // Compose UI
+    // 2. Compose UI (Versions are managed by BOM)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -84,56 +84,43 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 
-    // Core AndroidX
+    // 3. Core AndroidX & Navigation
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
+    implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
 
-    // Navigation
-    implementation("androidx.navigation:navigation-compose:2.7.7")
+    // 4. Media3 (Advanced Player Engine - All-in-One)
+    val media3Version = "1.3.1" // Align with your current stable version
+    implementation("androidx.media3:media3-exoplayer:$media3Version")
+    implementation("androidx.media3:media3-ui:$media3Version")
+    implementation("androidx.media3:media3-session:$media3Version")
+    implementation("androidx.media3:media3-common:$media3Version")
+    implementation("androidx.media3:media3-exoplayer-hls:$media3Version")
+    implementation("androidx.media3:media3-datasource-okhttp:$media3Version")
 
-    // Media3 / ExoPlayer
-    implementation("androidx.media3:media3-exoplayer:1.3.1")
-    implementation("androidx.media3:media3-exoplayer-dash:1.3.1")
-    implementation("androidx.media3:media3-exoplayer-hls:1.3.1")
-    implementation("androidx.media3:media3-exoplayer-rtsp:1.3.1")
-    implementation("androidx.media3:media3-ui:1.3.1")
-    implementation("androidx.media3:media3-session:1.3.1")
-    implementation("androidx.media3:media3-common:1.3.1")
-    implementation("androidx.media3:media3-datasource-okhttp:1.3.1")
+    // 5. THE ADVANCED LIBS (Universal Downloader & YouTube)
+    // Universal yt-dlp Downloader (Requires JitPack in settings.gradle.kts)
+    implementation("com.github.yausername.youtubedl-android:library:0.25.0")
+    implementation("com.github.yausername.youtubedl-android:ffmpeg:0.25.0") 
 
-    // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    // YouTube Bridge (Ad-free streaming support)
+    implementation("com.pierfrancescosoffritti.androidyoutubeplayer:core:12.1.0")
 
-    // Coil for image loading
+    // PC Link / Networking (Offline Connector)
+    implementation("org.codelibs:jcifs:2.1.34") 
+
+    // 6. Support Libraries
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("io.coil-kt:coil-video:2.6.0")
-
-    // DataStore for settings
     implementation("androidx.datastore:datastore-preferences:1.0.0")
-
-    // Accompanist permissions
     implementation("com.google.accompanist:accompanist-permissions:0.34.0")
-
-    // OkHttp for networking
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
-    // Test - Unit Testing
+    // 7. Testing
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.robolectric:robolectric:4.11.1")
-    testImplementation("androidx.test:core:1.5.0")
-    testImplementation("org.mockito.kotlin:mockito-kotlin:5.1.0")
-    testImplementation("org.mockito:mockito-core:5.2.0")
-    testImplementation("androidx.arch.core:core-testing:2.2.0")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
-    testImplementation("kotlin-test:kotlin-test:1.9.22")
-
-    // Test - Instrumented Testing
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
-    androidTestImplementation("org.mockito.kotlin:mockito-kotlin:5.1.0")
-    androidTestImplementation("org.mockito:mockito-android:5.2.0")
 }
