@@ -126,9 +126,8 @@ implementation("androidx.media3:media3-exoplayer-hls:$media3Version")
 implementation("androidx.media3:media3-datasource-okhttp:$media3Version")
 
 // Downloader (yt-dlp Android)  ✅ FIXED FORMAT
-implementation("com.github.umarjaumofficial:youtubedl-android:0.25.0")
-implementation("com.github.umarjaumofficial:youtubedl-android-ffmpeg:0.25.0")
-
+implementation("com.github.umarjaumofficial:youtubedl-android:0.16.0")
+implementation("com.github.umarjaumofficial:youtubedl-android-ffmpeg:0.16.0")
 // YouTube player bridge
 implementation("com.pierfrancescosoffritti.androidyoutubeplayer:core:12.1.0")
 
