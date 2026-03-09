@@ -103,8 +103,8 @@ dependencies {
 
     // 5. THE ADVANCED LIBS (Universal Downloader & YouTube)
     // Universal yt-dlp Downloader (Requires JitPack in settings.gradle.kts)
-    implementation("com.github.yausername.youtubedl-android:library:0.25.0")
-    implementation("com.github.yausername.youtubedl-android:ffmpeg:0.25.0") 
+    implementation("com.github.umarjaumofficial.youtubedl-android:library:0.25.0")
+    implementation("com.github.umarjaumofficial.youtubedl-android:ffmpeg:0.25.0") 
 
     // YouTube Bridge (Ad-free streaming support)
     implementation("com.pierfrancescosoffritti.androidyoutubeplayer:core:12.1.0")
