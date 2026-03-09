@@ -14,6 +14,9 @@ dependencyResolutionManagement {
         // REQUIRED for yt-dlp and many advanced media libraries
         maven { url = uri("https://jitpack.io") } 
     }
+dependencies {
+		implementation 'com.github.User:Repo:Tag'
+	}
 }
 
 rootProject.name = "NegoPlayer"
